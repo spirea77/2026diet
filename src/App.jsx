@@ -31,15 +31,19 @@ function addHours(timeStr, hours) {
   return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
 }
 
-function getWeekDates(weekOffset = 0) {
+function getFourWeekDates(periodOffset = 0) {
   const today = new Date();
   const day = today.getDay();
   const monday = new Date(today);
-  monday.setDate(today.getDate() - ((day === 0 ? 7 : day) - 1) + weekOffset * 7);
   
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
+  monday.setDate(today.getDate() - ((day === 0 ? 7 : day) - 1) + periodOffset * 28);
+  
+  const startMonday = new Date(monday);
+  startMonday.setDate(monday.getDate() - 21);
+  
+  return Array.from({ length: 28 }, (_, i) => {
+    const d = new Date(startMonday);
+    d.setDate(startMonday.getDate() + i);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
 }
@@ -58,7 +62,7 @@ function saveStorage(data) {
 
 const timeOptions = generateTimeOptions();
 
-// ─── Styles (폰트 제거 및 글자색 밝게 수정 완료) ──────────────────────────────────
+// ─── Styles ──────────────────────────────────────────────────────────────────
 const css = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -74,6 +78,7 @@ const css = `
     --text3: #aaaaaa;
     --border: #333333;
     --gold: #c4a45a;
+    --danger: #e57373; 
   }
 
   body {
@@ -168,8 +173,16 @@ const css = `
   .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent3), var(--accent)); transition: width 0.4s ease; }
   .progress-text { font-size: 12px; color: var(--text3); margin-top: 8px; font-weight: bold; }
 
-  .action-row { display: flex; gap: 12px; margin-bottom: 40px; }
+  .action-row { display: flex; gap: 10px; margin-bottom: 40px; }
   @media (max-width: 580px) { .action-row { flex-direction: column; } }
+
+  /* 초기화 버튼 스타일 추가 */
+  .reset-btn {
+    flex: 1; padding: 16px; background: transparent; color: var(--danger);
+    border: 1px solid var(--danger); border-radius: 6px; font-size: 14px; font-weight: 700; 
+    cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .reset-btn:hover { background: rgba(229, 115, 115, 0.1); }
 
   .save-btn {
     flex: 2; padding: 16px; background: var(--accent); color: var(--bg);
@@ -198,18 +211,24 @@ const css = `
 
   .day-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
-    padding: 14px 8px; text-align: center; min-height: 140px; display: flex; flex-direction: column;
+    padding: 12px 6px; text-align: center; min-height: 120px; display: flex; flex-direction: column;
+    transition: all 0.2s;
   }
   .day-card.today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .day-card.has-data { background: var(--surface2); }
-  .day-name { font-size: 11px; color: var(--text3); margin-bottom: 6px; font-weight: bold; }
-  .day-num { font-size: 18px; font-weight: 800; color: var(--text2); margin-bottom: 12px; }
-  .day-card.today .day-num { color: var(--accent); }
   
-  .day-times { font-size: 11px; color: var(--text3); margin-bottom: 10px; line-height: 1.4; background: rgba(0,0,0,0.2); padding: 4px; border-radius: 4px; }
-  .day-dots { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: auto; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border); }
-  .day-score { font-size: 11px; color: var(--text3); margin-top: 8px; font-weight: bold; }
+  .day-card.missed { border-color: var(--danger); background: rgba(229, 115, 115, 0.05); }
+  
+  .day-name { font-size: 11px; color: var(--text3); margin-bottom: 6px; font-weight: bold; }
+  .day-num { font-size: 16px; font-weight: 800; color: var(--text2); margin-bottom: 8px; }
+  .day-card.today .day-num { color: var(--accent); }
+  .day-card.missed .day-num { color: var(--danger); }
+  
+  .day-times { font-size: 10px; color: var(--text3); margin-bottom: 8px; line-height: 1.4; background: rgba(0,0,0,0.2); padding: 4px; border-radius: 4px; }
+  .day-dots { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; margin-top: auto; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+  .day-score { font-size: 10px; color: var(--text3); margin-top: 6px; font-weight: bold; }
+  .missed-text { font-size: 11px; color: var(--danger); font-weight: bold; margin-top: auto; }
 
   .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 20px; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; justify-content: center; }
   .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text2); font-weight: 500; }
@@ -227,15 +246,14 @@ const css = `
 // ─── App ─────────────────────────────────────────────────────────────────────
 export default function App() {
   const [currentDateKey, setCurrentDateKey] = useState(getTodayKey());
-  const [startTime, setStartTime] = useState("20:00"); // 저녁 8시 기본값 세팅
+  const [startTime, setStartTime] = useState("20:00");
   const [checked, setChecked] = useState({});
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [toast, setToast] = useState(false);
+  const [periodOffset, setPeriodOffset] = useState(0); 
+  const [toastMsg, setToastMsg] = useState(""); // 팝업 메시지를 상태로 관리
 
   const endTime = addHours(startTime, 16);
   const todayKey = getTodayKey();
 
-  // 날짜가 바뀔 때마다 저장된 데이터 불러오기
   useEffect(() => {
     const data = loadStorage();
     const rec = data[currentDateKey];
@@ -273,11 +291,31 @@ export default function App() {
     const data = loadStorage();
     data[currentDateKey] = { startTime, endTime, checked };
     saveStorage(data);
-    setToast(true);
-    setTimeout(() => setToast(false), 2000);
+    setToastMsg("✓ 기록이 안전하게 저장되었습니다!");
+    setTimeout(() => setToastMsg(""), 2000);
   }
 
-  // 엑셀(CSV) 다운로드 기능 추가
+  // ✨ 추가된 초기화(Reset) 기능
+  function resetDay() {
+    // 실수로 지우는 것을 방지하기 위한 확인 창
+    if (!window.confirm("이 날짜의 기록을 정말 초기화하시겠습니까?")) return;
+    
+    // 화면 초기화
+    setStartTime("20:00");
+    setChecked({});
+    
+    // 데이터 저장소(달력)에서 완전히 삭제
+    const data = loadStorage();
+    if (data[currentDateKey]) {
+      delete data[currentDateKey];
+      saveStorage(data);
+    }
+    
+    setToastMsg("↺ 기록이 초기화되었습니다.");
+    setTimeout(() => setToastMsg(""), 2000);
+  }
+
+  // ✨ 엑셀 % 표기 수정 적용
   function exportToCSV() {
     const data = loadStorage();
     const dates = Object.keys(data).sort();
@@ -287,12 +325,10 @@ export default function App() {
       return;
     }
 
-    // 엑셀 파일의 첫 줄 (항목 이름)
     let csvContent = "날짜,단식시작(저녁),단식종료(아침),";
     ITEMS.forEach(item => { csvContent += `${item.label},`; });
     csvContent += "총 달성률\n";
 
-    // 저장된 데이터를 한 줄씩 엑셀 양식으로 변환
     dates.forEach(date => {
       const rec = data[date];
       let row = `${date},${rec.startTime || ""},${rec.endTime || ""},`;
@@ -304,11 +340,12 @@ export default function App() {
         if (isDone) score++;
       });
       
-      row += `${score}/${ITEMS.length}\n`;
+      const percent = Math.round((score / ITEMS.length) * 100);
+      row += `${score} / ${ITEMS.length} (${percent}%)\n`;
+      
       csvContent += row;
     });
 
-    // 한글 깨짐 방지용 코드(\uFEFF)와 함께 파일 다운로드 실행
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -319,11 +356,11 @@ export default function App() {
     document.body.removeChild(link);
   }
 
-  const weekDates = getWeekDates(weekOffset);
+  const fourWeekDates = getFourWeekDates(periodOffset);
   const data = loadStorage();
 
-  const weekStart = weekDates[0].slice(5).replace("-", "/");
-  const weekEnd = weekDates[6].slice(5).replace("-", "/");
+  const periodStart = fourWeekDates[0].slice(5).replace("-", "/");
+  const periodEnd = fourWeekDates[27].slice(5).replace("-", "/");
 
   return (
     <>
@@ -336,14 +373,12 @@ export default function App() {
       </header>
 
       <main className="main">
-        {/* 날짜 이동 바 */}
         <div className="date-bar">
           <button onClick={() => changeDate(-1)}>◀</button>
           <span className="date-label">{formatDateLabel(currentDateKey)}</span>
           <button onClick={() => changeDate(1)}>▶</button>
         </div>
 
-        {/* 시간 설정 (저녁 -> 아침 순서로 변경 완료) */}
         <div className="time-grid">
           <div className="time-card">
             <div className="card-label">🌙 단식 시작 (저녁)</div>
@@ -368,7 +403,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* 체크리스트 */}
         <div className="section-card">
           <div className="section-label">오늘의 실천 항목</div>
           <div className="check-grid">
@@ -386,7 +420,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* 달성률 바 */}
         <div className="section-card" style={{ padding: "20px 24px" }}>
           <div className="section-label">오늘 달성률</div>
           <div className="progress-bar">
@@ -395,33 +428,37 @@ export default function App() {
           <div className="progress-text">{checkedCount} / {ITEMS.length} 항목 완료</div>
         </div>
 
-        {/* 저장 및 엑셀 내보내기 버튼 */}
+        {/* 버튼 영역에 '초기화 버튼' 추가 */}
         <div className="action-row">
+          <button className="reset-btn" onClick={resetDay}>↺ 초기화</button>
           <button className="save-btn" onClick={saveDay}>✓ 오늘 기록 저장</button>
           <button className="export-btn" onClick={exportToCSV}>📥 엑셀(CSV) 내보내기</button>
         </div>
 
-        {/* 주간 기록 달력 */}
         <div className="section-card">
-          <div className="section-label">주간 현황 한눈에 보기</div>
+          <div className="section-label">최근 4주 현황 (미기록 주의🚨)</div>
           <div className="week-nav">
-            <button onClick={() => setWeekOffset(w => w - 1)}>◀ 이전 주</button>
-            <span className="week-range">{weekStart} ~ {weekEnd}</span>
-            <button onClick={() => setWeekOffset(w => w + 1)}>다음 주 ▶</button>
+            <button onClick={() => setPeriodOffset(w => w - 1)}>◀ 과거 4주</button>
+            <span className="week-range">{periodStart} ~ {periodEnd}</span>
+            <button onClick={() => setPeriodOffset(w => w + 1)}>다음 4주 ▶</button>
           </div>
 
           <div className="week-grid">
-            {weekDates.map((key, i) => {
+            {fourWeekDates.map((key, i) => {
               const rec = data[key];
               const [, , d] = key.split("-").map(Number);
               const isToday = key === todayKey;
+              const isPast = key < todayKey;
               const score = rec ? ITEMS.filter(item => rec.checked?.[item.key]).length : 0;
               
+              const isMissed = isPast && (!rec || score === 0);
+              
               return (
-                <div key={key} className={`day-card${isToday ? " today" : ""}${rec ? " has-data" : ""}`}>
-                  <div className="day-name">{DAYS[i]}</div>
+                <div key={key} className={`day-card${isToday ? " today" : ""}${rec ? " has-data" : ""}${isMissed ? " missed" : ""}`}>
+                  <div className="day-name">{DAYS[i % 7]}</div>
                   <div className="day-num">{d}</div>
-                  {rec && (
+                  
+                  {rec && score > 0 ? (
                     <>
                       <div className="day-times">
                         {rec.startTime}<br/>↓<br/>{rec.endTime}
@@ -438,7 +475,9 @@ export default function App() {
                       </div>
                       <div className="day-score">{score}/{ITEMS.length}</div>
                     </>
-                  )}
+                  ) : isMissed ? (
+                    <div className="missed-text">미기록</div>
+                  ) : null}
                 </div>
               );
             })}
@@ -456,7 +495,8 @@ export default function App() {
 
       </main>
 
-      <div className={`toast${toast ? " show" : ""}`}>기록이 안전하게 저장되었습니다!</div>
+      {/* 상황에 따라 알림 메시지가 바뀌도록 수정 */}
+      <div className={`toast${toastMsg ? " show" : ""}`}>{toastMsg}</div>
     </>
   );
 }
